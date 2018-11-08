@@ -1,0 +1,257 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+
+
+
+Parameters:
+  fvpccidr:
+      Description: "my fvpc cidr block range"
+      Type: String
+      Default: 10.0.0.0/16
+
+  subnet1cidr:
+      Description: "subnet1 cidr block"
+      Type: String
+      Default: 10.0.1.0/24
+
+  subnet2cidr:
+      Description: "subnet2 cidr block"
+      Type: String
+      Default: 10.0.2.0/24
+
+  pvsub1cidr:
+      Description: "pvsub1 cidr blocke"
+      Type: String
+      Default: 10.0.3.0/24
+
+  pvsub2cidr:
+      Description: "pvsub2 cidr blocke"
+      Type: String
+      Default: 10.0.4.0/24
+
+  Subnet1Azs:
+      Description: "Availability zones for subnet1"
+      Type:  AWS::EC2::AvailabilityZone::Name
+
+  Subnet2Azs:
+      Description: "Availability zones for subnet2"
+      Type:  AWS::EC2::AvailabilityZone::Name
+
+  Pvsub1Azs:
+      Description: "Availability zones for private subnet1"
+      Type:  AWS::EC2::AvailabilityZone::Name
+
+  Pvsub2Azs:
+      Description: "Availability zones for private subnet1"
+      Type:  AWS::EC2::AvailabilityZone::Name
+
+
+
+
+Resources:
+  fvpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref fvpccidr
+      EnableDnsHostnames: 'true'
+      EnableDnsSupport: 'true'
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: fvpc
+
+  subnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Ref Subnet1Azs
+      CidrBlock: !Ref subnet1cidr
+      MapPublicIpOnLaunch: 'true'
+      Tags:
+        - Key: Name
+          Value: Subnet1
+      VpcId: !Ref fvpc
+
+
+  subnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Ref Subnet2Azs
+      CidrBlock: !Ref subnet2cidr
+      MapPublicIpOnLaunch: 'true'
+      Tags:
+        - Key: Name
+          Value: Subnet2
+      VpcId: !Ref fvpc
+
+  myigw:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: myigw
+
+  attachgateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref myigw
+      VpcId: !Ref fvpc
+
+  pubsubnetRT:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      Tags:
+        - Key: Name
+          Value: pubsubnetRT
+      VpcId: !Ref fvpc
+
+
+  pubsubRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref myigw
+      RouteTableId: !Ref pubsubnetRT
+
+  subnet1RTA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref pubsubnetRT
+      SubnetId: !Ref subnet1
+
+
+  subnet2RTA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref pubsubnetRT
+      SubnetId: !Ref subnet2
+
+  pvsub1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Ref Pvsub1Azs
+      CidrBlock: !Ref pvsub1cidr
+      MapPublicIpOnLaunch: 'false'
+      Tags:
+        - Key: Name
+          Value: pvsub1
+      VpcId: !Ref fvpc
+
+
+  pvsub2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Ref Pvsub2Azs
+      CidrBlock: !Ref pvsub2cidr
+      MapPublicIpOnLaunch: 'false'
+      Tags:
+        - Key: Name
+          Value: pvsub2
+      VpcId: !Ref fvpc
+
+  ngw1eip:
+    Type: AWS::EC2::EIP
+    DependsOn: myigw
+    Properties:
+      Domain: fvpc
+
+  ngw2eip:
+    Type: AWS::EC2::EIP
+    DependsOn: myigw
+    Properties:
+      Domain: fvpc
+
+  NGW1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt ngw1eip.AllocationId
+      SubnetId: !Ref pvsub1
+
+  NGW2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt ngw2eip.AllocationId
+      SubnetId: !Ref pvsub2
+
+  pvRT1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      Tags:
+        - Key: Name
+          Value: pvRT1
+      VpcId: !Ref fvpc
+
+  pvRT2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      Tags:
+        - Key: Name
+          Value: pvRT2
+      VpcId: !Ref fvpc
+
+
+  pvroute1:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NGW1
+      RouteTableId: !Ref pvRT1
+
+  pvroute2:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NGW2
+      RouteTableId: !Ref pvRT2
+
+  pvsub1RTA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref pvRT1
+      SubnetId: !Ref pvsub1
+
+  pvsub2RTA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref pvRT2
+      SubnetId: !Ref pvsub2
+
+  fsg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "fsg"
+      GroupDescription: "fvpc fsg"
+      VpcId: !Ref fvpc
+
+
+Outputs:
+  fvpc:
+    Description: "my first vpc cft"
+    Value: !Ref fvpc
+
+  publicsubnets:
+    Description: "public subnets"
+    Value: !Join [",",[ !Ref subnet1, !Ref subnet2 ]]
+
+  privatesubnets:
+    Description: "private subnets"
+    Value: !Join [",", [ !Ref pvsub1, !Ref pvsub2 ]]
+
+  publicsubnet1:
+    Description: "public subnet one"
+    Value: !Ref subnet1
+
+  publicsubnet2:
+    Description: "public subnet two"
+    Value: !Ref subnet2
+
+  privatesubnet1:
+    Description: "private subnet one"
+    Value: !Ref pvsub1
+
+  privatesubnet2:
+    Description: "private subnet two"
+    Value: !Ref pvsub2
+
+  fsg:
+    Description: "first security group"
+    Value: !Ref fvpc
